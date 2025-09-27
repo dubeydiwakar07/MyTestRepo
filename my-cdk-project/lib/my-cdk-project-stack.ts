@@ -7,10 +7,10 @@ export class MyCdkProjectStack extends cdk.Stack {
     super(scope, id, props);
 
     new s3.Bucket(this, 'Samplebucket', {
-      bucketName:"MyTestBucket",
+      bucketName:"diw-test-bucket1",
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY, // Only for dev/test
-      autoDeleteObjects: true, // Only for dev/test
+      //autoDeleteObjects: true, // Only for dev/test
     });
   }
 }
