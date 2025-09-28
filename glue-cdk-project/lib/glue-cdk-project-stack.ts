@@ -9,63 +9,70 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 export class GlueCdkProjectStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-        // Create S3 bucket
-    const bucket = new s3.Bucket(this, 'Samplebucket', {
-      bucketName: "diw-test-bucket1",
+
+    // 1. Create S3 bucket
+    const bucket = new s3.Bucket(this, 'DiwTestBucket', {
+      bucketName: 'diw-test-bucket2',
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Deploy all folders from s3-assets (inbound, outbound, glue-script)
-    new s3deploy.BucketDeployment(this, 'DeployAssets', {
+    // Deploy inbound/
+    new s3deploy.BucketDeployment(this, 'DeployInbound', {
       destinationBucket: bucket,
-      sources: [s3deploy.Source.asset(path.join(__dirname, '../s3-assets'))],
+      destinationKeyPrefix: 'inbound/', // <--- This keeps the folder structure
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../s3-assets/inbound'))],
+      retainOnDelete: false,
+    });
+    
+    // Deploy outbound/
+    new s3deploy.BucketDeployment(this, 'DeployOutbound', {
+      destinationBucket: bucket,
+      destinationKeyPrefix: 'outbound/',
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../s3-assets/outbound'))],
+      retainOnDelete: false,
+    });
+    
+    // Deploy glue-script/
+    new s3deploy.BucketDeployment(this, 'DeployGlueScript', {
+      destinationBucket: bucket,
+      destinationKeyPrefix: 'glue-script/',
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../s3-assets/glue-script'))],
       retainOnDelete: false,
     });
 
-    // IAM Role for Glue Job with S3 access permissions
-    const glueRole = new iam.Role(this, 'GlueJobRole', {
+
+    // 3. Create IAM role with S3 full access for Glue job
+    const glueRole = new iam.Role(this, 'DiwTestRole', {
+      roleName: 'diw-test-role',
       assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
       managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole')
-      ]
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole'),
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'),
+      ],
     });
 
-    // Attach inline policy for S3 access
-    glueRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        's3:ListBucket',
-        's3:GetObject',
-        's3:PutObject'
-      ],
-      resources: [
-        'arn:aws:s3:::s3-assets',
-        'arn:aws:s3:::s3-assets/*'
-      ]
-    }));
-
-    // Define the Glue Job using CfnJob
-    new glue.CfnJob(this, 'ScalaGlueJob', {
-      name: 'CopyTestFileJob',
+    // 4. Create Glue job with specified parameters
+    new glue.CfnJob(this, 'CopyJob', {
+      name: 'CopyJob',
       role: glueRole.roleArn,
       command: {
         name: 'glueetl',
-        scriptLocation: 's3://s3-assets/glue-script/copy-test.scala',
-        pythonVersion: '3'
+        scriptLocation: 's3://diw-test-bucket2/glue-script/copy-test.py',
+        pythonVersion: '3',
       },
       defaultArguments: {
-        '--job-language': 'scala',
-        '--TempDir': 's3://s3-assets/temp/',
+        '--job-language': 'python 3',
+        '--TempDir': 's3://diw-test-bucket2/temp/',
         '--enable-metrics': 'true',
-        '--inboundPath': 's3://s3-assets/inbound/',
-        '--outboundPath': 's3://s3-assets/outbound/'
+        '--inboundPath': 's3://diw-test-bucket2/inbound/',
+        '--outboundPath': 's3://diw-test-bucket2/outbound/',
       },
       maxRetries: 1,
       timeout: 10,
       glueVersion: '4.0',
       numberOfWorkers: 2,
-      workerType: 'G.1X'
+      workerType: 'G.1X',
     });
   }
 }
